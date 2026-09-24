@@ -1,157 +1,206 @@
+import { useEffect, useMemo, useState } from "react";
 import "./styles.css";
+import type { Audiogram, ExamKind, MonitoringData } from "./monitoring/types";
+import { buildTasks } from "./monitoring/rules";
+import { loadData, resetData, saveData, todayISO } from "./monitoring/storage";
+import {
+  addEmployee,
+  addPost,
+  deleteExam,
+  saveExam,
+  transferPost,
+} from "./monitoring/service";
+import Dashboard from "./components/Dashboard";
+import ExamForm from "./components/ExamForm";
+import PeoplePosts from "./components/PeoplePosts";
+import RecordsView from "./components/RecordsView";
+import EmployeeProfile from "./components/EmployeeProfile";
 
-const project = {
-  "id": "hxwl-01",
-  "port": 5101,
-  "title": "听力验配记录",
-  "subtitle": "门店听力师的验配档案与听力曲线工作台",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#155e75",
-    "#22c55e",
-    "#f97316"
-  ],
-  "domain": "听力验配",
-  "users": [
-    "听力师",
-    "门店主管",
-    "复诊助理"
-  ],
-  "metrics": [
-    "左耳PTA",
-    "右耳PTA",
-    "言语识别率",
-    "复诊天数"
-  ],
-  "filters": [
-    "初配",
-    "复调",
-    "儿童",
-    "老人"
-  ],
-  "fields": [
-    "气导",
-    "骨导",
-    "言语识别率",
-    "助听器型号",
-    "增益调整",
-    "用户反馈"
-  ],
-  "records": [
-    [
-      "Liu-024",
-      "双耳高频下降",
-      "初配",
-      "RIC机型，2kHz后增益提高4dB"
-    ],
-    [
-      "Chen-118",
-      "单侧传导性损失",
-      "复调",
-      "低频压缩略降，反馈啸叫已消失"
-    ],
-    [
-      "Zhao-077",
-      "老人语频区下降",
-      "复诊",
-      "言语识别率从64%提升到76%"
-    ]
-  ]
-};
+type Tab = "dashboard" | "exam" | "people" | "records";
 
-const statusColors = ["status-ok", "status-watch", "status-danger"];
-
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+const TABS: { key: Tab; label: string }[] = [
+  { key: "dashboard", label: "监护看板" },
+  { key: "exam", label: "测听登记" },
+  { key: "people", label: "员工 / 岗位 / 换岗" },
+  { key: "records", label: "监护资料台账" },
+];
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const [data, setData] = useState<MonitoringData>(() => loadData());
+  const [tab, setTab] = useState<Tab>("dashboard");
+  const [today] = useState(todayISO());
+  const [toast, setToast] = useState("");
+  const [retestEmployeeId, setRetestEmployeeId] = useState<string | undefined>();
+  const [retestKind, setRetestKind] = useState<ExamKind>("annual");
+  const [editing, setEditing] = useState<Audiogram | null>(null);
+  const [profileId, setProfileId] = useState<string | null>(null);
+
+  // 本机保存：资料变更即落 localStorage（保存层与判定、页面分离）
+  useEffect(() => {
+    saveData(data);
+  }, [data]);
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 4500);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  const tasks = useMemo(() => buildTasks(data, today), [data, today]);
+
+  const openProfile = (employeeId: string) => setProfileId(employeeId);
+
+  const goRegisterRetest = (employeeId: string) => {
+    setEditing(null);
+    setRetestEmployeeId(employeeId);
+    setRetestKind("retest");
+    setProfileId(null);
+    setTab("exam");
+  };
+
+  const handleReset = () => {
+    if (confirm("恢复为示例数据？当前本机保存的监护资料将被覆盖。")) {
+      setData(resetData());
+      setToast("已恢复示例数据");
+    }
+  };
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">OHSM · 职业健康监护 · 噪声作业</p>
+          <h1>职业听力监护台</h1>
+          <p className="subtitle">
+            登记员工、岗位噪声与左右耳 2/3/4kHz 听阈，对照本人基线：任一耳平均上移
+            ≥10dB 自动安排30天复查，复查仍上移才列为需干预；换岗时未完成复查随转到新岗位。
+            判定依据 GBZ 188。
+          </p>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <span>资料保存</span>
+          <strong>本机浏览器保存（localStorage）</strong>
+          <p className="sub-line">判定规则、本机保存与页面相互独立，数据不上传服务器</p>
+          <button onClick={handleReset}>恢复示例数据</button>
         </div>
       </section>
 
-      <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
+      <nav className="tabs">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            className={tab === t.key ? "tab active" : "tab"}
+            onClick={() => {
+              setTab(t.key);
+              setEditing(null);
+              setRetestEmployeeId(undefined);
+              setRetestKind("annual");
+            }}
+          >
+            {t.label}
+          </button>
         ))}
-      </section>
+      </nav>
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
+      {toast && <div className="toast">{toast}</div>}
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+      {tab === "dashboard" && (
+        <Dashboard
+          data={data}
+          tasks={tasks}
+          today={today}
+          onRegisterRetest={goRegisterRetest}
+          onOpenEmployee={openProfile}
+        />
+      )}
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
+      {tab === "exam" && (
+        <div className="stack">
+          <ExamForm
+            data={data}
+            today={today}
+            initialEmployeeId={retestEmployeeId}
+            initialKind={retestKind}
+            editing={editing}
+            saveExam={(d, draft) => {
+              const result = saveExam(d, draft);
+              setData(result.data);
+              return result;
+            }}
+            onSaved={(msg) => {
+              setToast(msg);
+              setEditing(null);
+              setRetestEmployeeId(undefined);
+              setRetestKind("annual");
+            }}
+            onCancelEdit={() => setEditing(null)}
+          />
         </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      )}
+
+      {tab === "people" && (
+        <PeoplePosts
+          data={data}
+          today={today}
+          onAddPost={(draft) => {
+            const { data: next, post } = addPost(data, draft);
+            setData(next);
+            setToast(`已登记岗位 ${post.name}（${post.limitDba}dB(A)）`);
+          }}
+          onAddEmployee={(draft) => {
+            try {
+              setData(addEmployee(data, draft));
+              setToast(`已登记员工 ${draft.id} ${draft.name}，并建立上岗履历`);
+              return null;
+            } catch (e) {
+              return (e as Error).message;
+            }
+          }}
+          onTransfer={(employeeId, newPostId, date, note) => {
+            try {
+              setData(transferPost(data, employeeId, newPostId, date, note));
+              setToast("已记录换岗履历，未完成的复查将随转到新岗位");
+              return null;
+            } catch (e) {
+              return (e as Error).message;
+            }
+          }}
+          onOpenEmployee={openProfile}
+        />
+      )}
+
+      {tab === "records" && (
+        <RecordsView
+          data={data}
+          focusEmployeeId={profileId ?? undefined}
+          onEdit={(exam) => {
+            setEditing(exam);
+            setRetestEmployeeId(exam.employeeId);
+            setTab("exam");
+          }}
+          onDelete={(id) => {
+            setData(deleteExam(data, id));
+            setToast("记录已删除，复查任务按剩余记录重新判定");
+          }}
+          onRegister={goRegisterRetest}
+        />
+      )}
+
+      {profileId && (
+        <EmployeeProfile
+          data={data}
+          tasks={tasks}
+          employeeId={profileId}
+          today={today}
+          onClose={() => setProfileId(null)}
+          onRegisterRetest={goRegisterRetest}
+        />
+      )}
+
+      <footer className="page-foot">
+        监护资料（员工/岗位噪声/测听/换岗履历）、判定规则（STS 10dB / 30天复查 / 复查仍上移→干预 / 随岗转移）、
+        本机保存（localStorage）与页面四层分离实现。
+      </footer>
     </main>
   );
 }
