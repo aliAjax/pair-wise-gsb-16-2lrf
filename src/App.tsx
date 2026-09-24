@@ -1,159 +1,84 @@
+import { useState } from "react";
 import "./styles.css";
+import { StoreProvider, useStore } from "./state/store";
+import Overview from "./ui/Overview";
+import Employees from "./ui/Employees";
+import EmployeeDetail from "./ui/EmployeeDetail";
 
-const project = {
-  "id": "hxwl-01",
-  "port": 5101,
-  "title": "听力验配记录",
-  "subtitle": "门店听力师的验配档案与听力曲线工作台",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#155e75",
-    "#22c55e",
-    "#f97316"
-  ],
-  "domain": "听力验配",
-  "users": [
-    "听力师",
-    "门店主管",
-    "复诊助理"
-  ],
-  "metrics": [
-    "左耳PTA",
-    "右耳PTA",
-    "言语识别率",
-    "复诊天数"
-  ],
-  "filters": [
-    "初配",
-    "复调",
-    "儿童",
-    "老人"
-  ],
-  "fields": [
-    "气导",
-    "骨导",
-    "言语识别率",
-    "助听器型号",
-    "增益调整",
-    "用户反馈"
-  ],
-  "records": [
-    [
-      "Liu-024",
-      "双耳高频下降",
-      "初配",
-      "RIC机型，2kHz后增益提高4dB"
-    ],
-    [
-      "Chen-118",
-      "单侧传导性损失",
-      "复调",
-      "低频压缩略降，反馈啸叫已消失"
-    ],
-    [
-      "Zhao-077",
-      "老人语频区下降",
-      "复诊",
-      "言语识别率从64%提升到76%"
-    ]
-  ]
-};
+type Tab = "overview" | "employees";
 
-const statusColors = ["status-ok", "status-watch", "status-danger"];
+function Shell() {
+  const { store, resetAll } = useStore();
+  const [tab, setTab] = useState<Tab>("overview");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+  function openEmployee(id: string) {
+    setSelectedId(id);
+  }
 
-function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  function backToList() {
+    setSelectedId(null);
+    setTab("employees");
+  }
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">职业健康监护 · 噪声岗位</p>
+          <h1>职业听力监护台</h1>
+          <p className="subtitle">
+            登记员工与岗位噪声，记录左右耳 2/3/4 kHz 听阈；对照基线，任一耳平均上移 10
+            分贝自动安排 30 天复查，复查仍上移才列为需干预。换岗时未完成复查结转新岗位，前后阈值与处理依据全程保留，资料本机保存。
+          </p>
+          <nav className="tabs">
+            <button className={tab === "overview" ? "selected" : ""} onClick={() => { setTab("overview"); setSelectedId(null); }}>
+              总览与复查台
+            </button>
+            <button className={tab === "employees" ? "selected" : ""} onClick={() => { setTab("employees"); setSelectedId(null); }}>
+              员工监护名册
+            </button>
+          </nav>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <span>判定规则</span>
+          <strong>双耳 2/3/4 kHz 平均听阈</strong>
+          <p className="rule-line">任一耳较基线 ≥ +10 dB → 30天复查</p>
+          <p className="rule-line">复查仍 ≥ +10 dB → 需干预</p>
+          <button
+            className="ghost-btn"
+            onClick={() => {
+              if (window.confirm("确定清空本机全部监护资料并恢复演示数据？此操作不可撤销。")) {
+                resetAll();
+                setSelectedId(null);
+                setTab("overview");
+              }
+            }}
+          >
+            清空并恢复演示数据
+          </button>
         </div>
       </section>
 
-      <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
-        ))}
-      </section>
+      {selectedId ? (
+        <EmployeeDetail employeeId={selectedId} onBack={backToList} />
+      ) : tab === "overview" ? (
+        <Overview store={store} onOpenEmployee={openEmployee} />
+      ) : (
+        <Employees onOpenEmployee={openEmployee} />
+      )}
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="page-footer">
+        监护资料仅保存在本机浏览器（localStorage），不上传服务器；判定规则与页面分离，可审计可复核。
+      </footer>
     </main>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  );
+}
